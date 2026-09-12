@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Trailhead — Crypto &amp; NFT discovery for beginners</title>
+<link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+<div class="wrap">
+
+  <header class="app-head">
+    <div class="brand">
+      <h1>Trailhead</h1>
+      <p>A careful first look at coins and NFTs on Ethereum, Ink, Robinhood Chain, and Solana — for people who don't want to guess.</p>
+    </div>
+    <div class="head-actions">
+      <span class="live-pill" id="livePill"><span class="pulse"></span><span id="livePillText">Connecting…</span></span>
+      <button class="settings-btn" id="openSettings" type="button">
+        <span class="dot" id="webhookDot"></span> Discord alerts
+      </button>
+    </div>
+  </header>
+
+  <div class="disclaimer">
+    <strong>Not financial advice.</strong> Trailhead only shows public on-chain data so you can research faster — it doesn't vet, endorse, or recommend anything. New tokens and NFTs on any chain can lose all their value, including to outright scams. Always verify a contract address yourself before connecting a wallet or sending funds.
+  </div>
+
+  <div class="chain-tabs" id="chainTabs" role="tablist"></div>
+  <div class="chain-sub">
+    <p class="chain-note" id="chainNote"></p>
+    <p class="chain-note warn" id="chainWarn" style="display:none;"></p>
+  </div>
+
+  <div class="view-switch" id="viewSwitch">
+    <button class="view-tab active" data-view="coins" type="button">Coins</button>
+    <button class="view-tab" data-view="nfts" type="button">NFTs</button>
+  </div>
+
+  <!-- COINS VIEW -->
+  <div id="coinsView">
+    <section class="block">
+      <div class="block-head">
+        <h2>Coins</h2>
+        <span class="sub">Explorer data is live per chain · trading data from DexScreener where it exists</span>
+      </div>
+
+      <div class="search-row">
+        <input type="text" id="searchInput" placeholder="Look up a coin by name, symbol, or contract address…">
+        <button class="btn" id="searchBtn" type="button">Search</button>
+      </div>
+
+      <div class="toolbar">
+        <div class="feed-tabs" id="feedTabs">
+          <button class="feed-tab active" data-feed="mostheld" type="button">Most held</button>
+          <button class="feed-tab" data-feed="new" type="button">Freshly listed</button>
+          <button class="feed-tab" data-feed="boosted" type="button">Trending now</button>
+        </div>
+        <div class="toolbar-right">
+          <select class="sort-select" id="sortSelect"></select>
+          <button class="icon-btn" id="refreshBtn" type="button" title="Refresh">↻</button>
+        </div>
+      </div>
+
+      <div id="coinListBanner"></div>
+      <div id="coinListWrap"><div class="ledger" id="coinList"></div></div>
+    </section>
+
+    <section class="block">
+      <details class="accordion">
+        <summary>How to size up a coin before you buy anything</summary>
+        <div class="acc-body">
+          <ul>
+            <li>Check that liquidity is meaningfully larger than what you'd risk — and isn't just one wallet's temporary deposit.</li>
+            <li>Open the token on the chain's block explorer and look at holder distribution. If one or two wallets hold most of the supply, they can crash the price whenever they want. Watch out for the reverse trick too: a huge holder count can be faked by mass-airdropping tokens to random wallets, so a big number alone isn't proof of anything.</li>
+            <li>Check whether contract ownership was renounced or time-locked. An active owner can often mint more tokens, change fees, or disable selling entirely.</li>
+            <li>Read whether the contract is verified on the explorer rather than trusting the name and logo alone — anyone can copy those.</li>
+            <li>Search the project's name alongside "rug" or "scam" before putting in real money.</li>
+            <li>Treat "boosted" or "trending" labels as marketing, not vetting. Anyone can pay DexScreener to be featured — it says nothing about the team or the code.</li>
+            <li>A "Most held" listing just means many wallets hold it and it's been indexed by the explorer — it does not mean it has a working market. Check for a live trading pair before assuming you could actually sell it.</li>
+            <li>Start small. You can always add more once you've watched something for a few days.</li>
+          </ul>
+        </div>
+      </details>
+    </section>
+  </div>
+
+  <!-- NFTS VIEW -->
+  <div id="nftsView" style="display:none;">
+    <section class="block">
+      <div class="block-head">
+        <h2>NFTs</h2>
+        <span class="sub">Live contracts from each chain's own explorer</span>
+      </div>
+      <p class="chain-note" style="margin-bottom:10px;">
+        These collections come straight from the chain's block explorer, sorted by how many wallets hold them — that's real, not guessed. What it can't tell you: floor price or marketplace trading volume, since no free API reliably covers that for all three of these chains yet.
+      </p>
+      <div class="note-inline">
+        Heads up: an explorer lists everything deployed on-chain, so real collections sit right next to spam and scam contracts here. A high holder count can be faked by airdropping tokens to random wallets for free. Use this as a starting point to investigate, not a leaderboard of quality.
+      </div>
+
+      <div class="toolbar">
+        <span class="sub" id="nftListLabel">Sorted by holder count</span>
+        <div class="toolbar-right">
+          <button class="icon-btn" id="nftRefreshBtn" type="button" title="Refresh">↻</button>
+        </div>
+      </div>
+
+      <div id="nftListBanner"></div>
+      <div id="nftList"></div>
+    </section>
+
+    <section class="block">
+      <div class="links-panel" id="nftLinksPanel"></div>
+    </section>
+
+    <section class="block">
+      <details class="accordion">
+        <summary>How to size up an NFT collection before you buy</summary>
+        <div class="acc-body">
+          <ul>
+            <li>Confirm the collection's contract address using a marketplace's own verification badge or the chain's block explorer — never trust a link from a DM, comment, or random search result.</li>
+            <li>Never sign a transaction from an NFT you didn't mint yourself. A "surprise" airdropped NFT is one of the most common ways people get tricked into approving a wallet-draining contract.</li>
+            <li>Check the holder count and mint history. A collection where a handful of wallets hold most of the supply is easy for those wallets to manipulate — and a suspiciously huge holder count can mean mass airdrops, not real demand.</li>
+            <li>Compare the floor price across more than one marketplace source — a single low sale can make a floor look lower than what you'd actually pay to buy in.</li>
+            <li>Look up the creator's social accounts and any past projects before minting or buying.</li>
+          </ul>
+        </div>
+      </details>
+    </section>
+  </div>
+
+  <footer class="app-foot">
+    Existence &amp; holder data (Ethereum, Ink, Robinhood Chain): each chain's own Blockscout explorer (eth.blockscout.com, explorer.inkonchain.com, robinhoodchain.blockscout.com). Trading data everywhere, including Solana: <a href="https://dexscreener.com" target="_blank" rel="noopener noreferrer">DexScreener</a>. None of these are affiliated with Trailhead. Built for research, not execution — nothing here places a trade.
+  </footer>
+</div>
+
+<div class="modal-overlay" id="settingsOverlay">
+  <div class="modal">
+    <button class="modal-close" id="closeSettings" type="button" aria-label="Close">✕</button>
+    <h2>Discord alerts</h2>
+    <p class="desc">Get pinged the moment a token's live liquidity reaches the amount you set below — and share any coin or NFT to Discord by hand from its "Send to Discord" button.</p>
+
+    <label for="thresholdInput">Liquidity alert threshold</label>
+    <div class="threshold-row">
+      <span class="prefix">$</span>
+      <input type="number" id="thresholdInput" placeholder="e.g. 20000" min="0" step="100" inputmode="decimal">
+      <button class="btn secondary" id="saveThreshold" type="button">Save</button>
+    </div>
+    <p class="field-hint">Trailhead checks live liquidity in the background and posts to your webhook (with <strong>@everyone</strong>) the moment a token's liquidity is at or above this amount. Leave it empty to turn alerts off.</p>
+
+    <div class="monitor-status" id="monitorStatus"></div>
+
+    <hr class="divider">
+
+    <label for="webhookUrlInput">Webhook URL</label>
+    <div class="webhook-input-row">
+      <input type="password" id="webhookUrlInput" placeholder="https://discord.com/api/webhooks/…" autocomplete="off">
+      <button class="icon-btn" id="toggleWebhookVisibility" type="button" title="Show/hide">👁</button>
+    </div>
+    <div class="modal-actions">
+      <button class="btn" id="saveWebhook" type="button">Save</button>
+      <button class="btn secondary" id="testWebhook" type="button">Send test message</button>
+      <button class="btn secondary" id="clearWebhook" type="button">Remove</button>
+    </div>
+    <p class="modal-status" id="webhookStatus" aria-live="polite"></p>
+    <p class="modal-hint">In Discord: open your server → Server Settings → Integrations → Webhooks → New Webhook → Copy Webhook URL. The URL is stored on this server only — it's never sent to your browser or shown in this app's source. In Discord's own Server Settings → Roles, make sure @everyone is allowed to be mentioned in the alert channel.</p>
+  </div>
+</div>
+
+<div id="toast" role="status" aria-live="polite"></div>
+
+<script src="/app.js"></script>
+</body>
+</html>

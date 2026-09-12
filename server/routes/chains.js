@@ -1,0 +1,23 @@
+"use strict";
+
+const express = require("express");
+const { CHAINS, NFT_INFO } = require("../lib/chains");
+
+const router = express.Router();
+
+router.get("/", (req, res) => {
+  const list = Object.keys(CHAINS).map((key) => {
+    const c = CHAINS[key];
+    return {
+      key: c.key,
+      label: c.label,
+      explorerLabel: c.explorerLabel,
+      note: c.note,
+      warn: c.warn || null,
+      nft: NFT_INFO[key] || { body: "", links: [] },
+    };
+  });
+  res.json({ ok: true, data: list });
+});
+
+module.exports = router;

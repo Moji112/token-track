@@ -1,0 +1,17 @@
+{
+  "name": "trailhead-token-bot",
+  "version": "1.0.0",
+  "description": "Trailhead — live coin/NFT discovery tracker with configurable Discord liquidity alerts.",
+  "main": "server/index.js",
+  "scripts": {
+    "start": "node server/index.js",
+    "dev": "node --watch server/index.js"
+  },
+  "engines": {
+    "node": ">=18.17"
+  },
+  "license": "UNLICENSED",
+  "dependencies": {
+    "express": "^4.19.2"
+  }
+}
