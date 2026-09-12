@@ -9,9 +9,13 @@ const nftRoute = require("./routes/nft");
 const settingsRoute = require("./routes/settings");
 const discordRoute = require("./routes/discord");
 const monitor = require("./lib/monitor");
+const auth = require("./lib/auth");
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+
+// Password gate for the whole app (UI + API) — set TRAILHEAD_PASSWORD to enable.
+app.use(auth.basicAuth);
 
 app.use(express.json({ limit: "256kb" }));
 
@@ -40,5 +44,10 @@ process.on("uncaughtException", (err) => {
 
 app.listen(PORT, () => {
   console.log(`Trailhead running at http://localhost:${PORT}`);
+  console.log(
+    auth.isEnabled()
+      ? "Password protection: ON (TRAILHEAD_PASSWORD is set)"
+      : "Password protection: OFF — set TRAILHEAD_PASSWORD in the environment to require a password."
+  );
   monitor.start();
 });

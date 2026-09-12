@@ -22,6 +22,20 @@ npm start
 Then open http://localhost:3000. Use `npm run dev` instead of `npm start`
 while developing — it restarts on file changes.
 
+## Password-protecting it
+
+Off by default. To require a password, copy `.env.example` to `.env` and set:
+
+```
+TRAILHEAD_PASSWORD=something-only-you-know
+```
+
+Restart the server and every page/API request now requires HTTP Basic Auth
+with that password (any username works — only the password is checked).
+`.env` is gitignored, so the password never gets committed; on a host, set
+`TRAILHEAD_PASSWORD` as an environment variable there instead of a file.
+Leave it unset to run without a login prompt.
+
 ## Configuring alerts
 
 Open **Discord alerts** (top right):

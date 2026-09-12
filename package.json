@@ -4,11 +4,11 @@
   "description": "Trailhead — live coin/NFT discovery tracker with configurable Discord liquidity alerts.",
   "main": "server/index.js",
   "scripts": {
-    "start": "node server/index.js",
-    "dev": "node --watch server/index.js"
+    "start": "node --env-file-if-exists=.env server/index.js",
+    "dev": "node --watch --env-file-if-exists=.env server/index.js"
   },
   "engines": {
-    "node": ">=18.17"
+    "node": ">=20.6"
   },
   "license": "UNLICENSED",
   "dependencies": {
