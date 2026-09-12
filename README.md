@@ -36,6 +36,40 @@ with that password (any username works — only the password is checked).
 `TRAILHEAD_PASSWORD` as an environment variable there instead of a file.
 Leave it unset to run without a login prompt.
 
+## Deploying
+
+This app needs a host that keeps a Node **process** running continuously —
+the background liquidity monitor is a `setInterval` loop, and settings are
+persisted to a local file. That rules out plain serverless platforms
+(Vercel, Netlify Functions, etc.): they freeze/kill the process between
+requests, which would silently stop the automatic Discord alerts and reset
+your webhook/threshold. Railway and Render both run a real persistent
+process and work with zero code changes:
+
+**Railway**
+1. New Project → Deploy from GitHub repo → pick this repo.
+2. It auto-detects Node (via `package.json`) and runs `npm install` then
+   `npm start`. No config needed.
+3. Add a variable `TRAILHEAD_PASSWORD` (Settings → Variables) if you want
+   password protection. Don't set `PORT` — Railway injects it.
+4. Optional but recommended: add a **Volume** mounted at `/app/data` so
+   `data/settings.json` (webhook, threshold, sent-alert history) survives
+   redeploys instead of resetting each time.
+
+**Render**
+1. New → Web Service → connect this repo.
+2. Build command: `npm install`. Start command: `npm start`.
+3. Add environment variable `TRAILHEAD_PASSWORD` if wanted. Render sets
+   `PORT` automatically.
+4. Optional but recommended: add a **Persistent Disk** mounted at
+   `/opt/render/project/src/data` for the same reason as above (needs a
+   paid instance type — Render's free tier has no persistent disks, so
+   `data/settings.json` will reset on every redeploy/restart there).
+
+Either way, once it's deployed, open the URL, set your liquidity threshold
+and Discord webhook the same way you would locally — the background monitor
+runs automatically as long as the service is up.
+
 ## Configuring alerts
 
 Open **Discord alerts** (top right):
