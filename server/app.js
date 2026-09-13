@@ -38,7 +38,11 @@ app.use("/api/watchlist", watchlistRoute);
 app.use("/api/events", eventsRoute);
 app.use("/api/whale", whaleRoute);
 
-app.use(express.static(path.join(__dirname, "..", "public")));
+// Named "webapp", not "public" — Vercel treats a top-level "public/" folder as
+// its implicit static-asset output and serves it directly, bypassing this
+// Express app (and therefore the auth gate above) entirely. A differently
+// named folder forces every request through this app, gate included.
+app.use(express.static(path.join(__dirname, "..", "webapp")));
 
 // Belt-and-suspenders: an uncaught error in any route must return a clean
 // response, never crash the process or take down other in-flight requests.

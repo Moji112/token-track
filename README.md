@@ -174,6 +174,9 @@ server/
     alertTracker.js             dedupes liquidity alerts per token/threshold
     monitor.js                   background liquidity-threshold watcher
   routes/                API endpoints consumed by the frontend
-public/
-  index.html, styles.css, app.js   the UI (ported from the original design)
+webapp/
+  index.html, styles.css, app.js   the UI (deliberately not named "public" —
+                                    Vercel auto-serves a top-level "public/"
+                                    folder as static files, bypassing this
+                                    app and its auth gate entirely)
 ```
