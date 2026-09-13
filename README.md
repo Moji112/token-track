@@ -1,9 +1,9 @@
 # Trailhead — token & NFT tracker with Discord liquidity alerts
 
 A Node/Express rebuild of the original single-file Trailhead tracker. Same
-coin/NFT discovery experience (Ethereum, Ink, Robinhood Chain, and Solana —
-live from each EVM chain's Blockscout explorer plus DexScreener everywhere),
-now with:
+coin/NFT discovery experience (Ethereum, Ink, Robinhood Chain, Base, and
+Solana — live from each EVM chain's Blockscout explorer plus DexScreener
+everywhere), now with:
 
 - A **configurable liquidity alert threshold** you set from the UI.
 - A background monitor that watches live liquidity and pings a **Discord

@@ -775,7 +775,8 @@
   var EXPLORER_BASE = {
     ethereum: "https://eth.blockscout.com",
     ink: "https://explorer.inkonchain.com",
-    robinhood: "https://robinhoodchain.blockscout.com"
+    robinhood: "https://robinhoodchain.blockscout.com",
+    base: "https://base.blockscout.com"
   };
   function explorerBase(chainKey) { return EXPLORER_BASE[chainKey] || ""; }
 

@@ -47,6 +47,16 @@ const CHAINS = {
       "A non-EVM chain, so the \"Most held\" tab (which relies on an EVM Blockscout explorer) isn't available here — use Freshly listed or Trending now instead, both sourced live from DexScreener. Solana's fees are tiny and its meme-coin volume is enormous, which cuts both ways: fast markets, and just as fast rug pulls.",
     discordColor: 0x14f195,
   },
+  base: {
+    key: "base",
+    label: "Base",
+    dexId: "base",
+    explorerUrl: "https://base.blockscout.com",
+    explorerLabel: "Blockscout — Base",
+    note:
+      "Coinbase's OP Stack layer-2 (chain ID 8453). Coinbase's own on/off-ramp makes it one of the easiest chains for a beginner to actually get funds onto — which also makes it a common target for tokens and NFTs impersonating well-known brands.",
+    discordColor: 0x0052ff,
+  },
 };
 
 const NFT_INFO = {
@@ -74,6 +84,14 @@ const NFT_INFO = {
     links: [
       { label: "Magic Eden", url: "https://magiceden.io" },
       { label: "Tensor", url: "https://www.tensor.trade" },
+    ],
+  },
+  base: {
+    body:
+      "Base has real NFT activity, much of it through Zora. The list above is every ERC-721/1155 contract Blockscout has indexed here, sorted by holders — for curated collections and floor prices, check the marketplaces directly.",
+    links: [
+      { label: "Zora", url: "https://zora.co" },
+      { label: "OpenSea", url: "https://opensea.io" },
     ],
   },
 };

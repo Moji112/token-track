@@ -11,6 +11,7 @@
   --accent-ink:#6B4A94;
   --accent-rh:#1FA85C;
   --accent-sol:#14A98A;
+  --accent-base:#0052FF;
   --pos:#1E8E5A;
   --neg:#B33F2E;
   --warn-bg:#F6E9C9;
@@ -102,6 +103,7 @@ header.app-head{
 .chain-tab[data-chain="ink"] .swatch{ background:var(--accent-ink); }
 .chain-tab[data-chain="robinhood"] .swatch{ background:var(--accent-rh); }
 .chain-tab[data-chain="solana"] .swatch{ background:var(--accent-sol); }
+.chain-tab[data-chain="base"] .swatch{ background:var(--accent-base); }
 .chain-tab.active{ color:var(--text); border-color:var(--text); background:var(--card); }
 
 .chain-note{ font-size:13px; color:var(--text-muted); margin:0 0 4px; max-width:74ch; }
