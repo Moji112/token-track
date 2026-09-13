@@ -20,10 +20,14 @@ const auth = require("./lib/auth");
 
 const app = express();
 
-// Password gate for the whole app (UI + API) — set TRAILHEAD_PASSWORD to enable.
-app.use(auth.basicAuth);
-
+// Body parsing has to come before the auth gate — the login endpoint needs
+// req.body, and it's one of the two paths the gate lets through unauthenticated.
 app.use(express.json({ limit: "256kb" }));
+
+// Password gate for the whole app (UI + API) — set TRAILHEAD_PASSWORD to enable.
+app.use(auth.gate);
+app.post("/api/auth/login", auth.login);
+app.post("/api/auth/logout", auth.logout);
 
 app.use("/api/chains", chainsRoute);
 app.use("/api/coins", coinsRoute);

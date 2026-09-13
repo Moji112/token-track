@@ -30,11 +30,14 @@ Off by default. To require a password, copy `.env.example` to `.env` and set:
 TRAILHEAD_PASSWORD=something-only-you-know
 ```
 
-Restart the server and every page/API request now requires HTTP Basic Auth
-with that password (any username works — only the password is checked).
+Restart the server and every page/request now shows a small login screen —
+password only, no username. On success it sets a signed session cookie
+(good for 30 days) rather than the browser's native Basic Auth prompt.
 `.env` is gitignored, so the password never gets committed; on a host, set
 `TRAILHEAD_PASSWORD` as an environment variable there instead of a file.
-Leave it unset to run without a login prompt.
+Leave it unset to run without a login prompt. Changing the password
+invalidates every existing session, since the session token is signed with
+a key derived from the password itself.
 
 ## Deploying
 
