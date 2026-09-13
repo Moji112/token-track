@@ -25,4 +25,17 @@ function markAlerted(chain, address, threshold) {
   store.set("alertedLiquidity", alerted);
 }
 
-module.exports = { alreadyAlerted, markAlerted };
+/**
+ * Clears the alerted mark once a token drops back below the threshold, so a
+ * later re-crossing fires a fresh alert instead of staying silenced forever.
+ * Only call this for a token currently below threshold.
+ */
+function clearAlert(chain, address, threshold) {
+  const alerted = store.get("alertedLiquidity", {});
+  const k = keyFor(chain, address, threshold);
+  if (!(k in alerted)) return;
+  delete alerted[k];
+  store.set("alertedLiquidity", alerted);
+}
+
+module.exports = { alreadyAlerted, markAlerted, clearAlert };

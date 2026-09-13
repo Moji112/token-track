@@ -13,6 +13,9 @@ const coinsRoute = require("./routes/coins");
 const nftRoute = require("./routes/nft");
 const settingsRoute = require("./routes/settings");
 const discordRoute = require("./routes/discord");
+const watchlistRoute = require("./routes/watchlist");
+const eventsRoute = require("./routes/events");
+const whaleRoute = require("./routes/whale");
 const auth = require("./lib/auth");
 
 const app = express();
@@ -27,6 +30,9 @@ app.use("/api/coins", coinsRoute);
 app.use("/api/nft", nftRoute);
 app.use("/api/settings", settingsRoute);
 app.use("/api/discord", discordRoute);
+app.use("/api/watchlist", watchlistRoute);
+app.use("/api/events", eventsRoute);
+app.use("/api/whale", whaleRoute);
 
 app.use(express.static(path.join(__dirname, "..", "public")));
 

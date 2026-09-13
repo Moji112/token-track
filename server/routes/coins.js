@@ -5,7 +5,7 @@ const { CHAINS } = require("../lib/chains");
 const coinsData = require("../lib/coinsData");
 
 const router = express.Router();
-const VALID_FEEDS = new Set(["mostheld", "new", "boosted"]);
+const VALID_FEEDS = new Set(["mostheld", "new", "boosted", "watch"]);
 
 function requireChain(req, res, next) {
   if (!CHAINS[req.params.chain]) {

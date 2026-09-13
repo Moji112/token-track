@@ -4,6 +4,7 @@ const { CHAINS, DEX_API, explorerAddressUrl, normalizeAddress } = require("./cha
 const { resilientFetchJSON } = require("./resilientFetch");
 const { numOr0, safeUrl, extractAddress, computeSupplyDisplay, safeMap } = require("./util");
 const { cached } = require("./dataCache");
+const watchlist = require("./watchlist");
 
 const ROW_TTL_MS = 25000; // how fresh a composed row list needs to be before we re-fetch
 const DISCOVERY_TTL_MS = 25000;
@@ -40,6 +41,7 @@ function dexEnrich(chainKey, addresses) {
   const chainId = CHAINS[chainKey].dexId;
   const list = addresses.slice(0, 30);
   if (!list.length) return Promise.resolve({});
+  const wanted = new Set(list.map((a) => normalizeAddress(chainKey, a)));
   return resilientFetchJSON(DEX_API + "/latest/dex/tokens/" + list.join(","), {
     timeoutMs: 9000,
     retries: 2,
@@ -50,6 +52,10 @@ function dexEnrich(chainKey, addresses) {
       pairs.forEach((p) => {
         if (p.chainId !== chainId || !p.baseToken || !p.baseToken.address) return;
         const key = normalizeAddress(chainKey, p.baseToken.address);
+        // Same fix as enrichTokens: DexScreener returns pairs where a requested
+        // address is on either side, so a widely-quoted token (USDT, WETH, ...)
+        // would otherwise get attributed some unrelated pair's data.
+        if (!wanted.has(key)) return;
         const liq = numOr0(p.liquidity && p.liquidity.usd);
         if (!out[key] || liq > numOr0(out[key].liquidity && out[key].liquidity.usd)) out[key] = p;
       });
@@ -104,6 +110,7 @@ function enrichTokens(chainKey, candidates) {
   });
   const list = addrs.slice(0, 30);
   if (!list.length) return Promise.resolve([]);
+  const wanted = new Set(list.map((a) => normalizeAddress(chainKey, a)));
   return resilientFetchJSON(DEX_API + "/latest/dex/tokens/" + list.join(","), {
     timeoutMs: 9000,
     retries: 2,
@@ -113,6 +120,11 @@ function enrichTokens(chainKey, candidates) {
     pairs.forEach((p) => {
       if (p.chainId !== chainId || !p.baseToken || !p.baseToken.address) return;
       const key = normalizeAddress(chainKey, p.baseToken.address);
+      // DexScreener's token endpoint returns every pair that includes any requested
+      // address on EITHER side — a widely-quoted token (USDT, WETH, ...) pulls in
+      // pairs where it's the quote side and something unrelated is the base. Only
+      // keep pairs whose base token is actually one of the addresses we asked about.
+      if (!wanted.has(key)) return;
       const liq = numOr0(p.liquidity && p.liquidity.usd);
       const existing = byToken[key];
       if (!existing || liq > numOr0(existing.liquidity && existing.liquidity.usd)) byToken[key] = p;
@@ -142,9 +154,13 @@ function buildCoinRow(o) {
     hasDex: !!dex,
     priceUsd: dex && dex.priceUsd !== undefined && dex.priceUsd !== null ? Number(dex.priceUsd) : null,
     priceChangeH24: dex ? dex.priceChange && dex.priceChange.h24 : null,
+    priceChangeH1: dex ? dex.priceChange && dex.priceChange.h1 : null,
+    buysH1: dex && dex.txns && dex.txns.h1 ? numOr0(dex.txns.h1.buys) : null,
+    sellsH1: dex && dex.txns && dex.txns.h1 ? numOr0(dex.txns.h1.sells) : null,
     liquidityUsd: dex ? dex.liquidity && dex.liquidity.usd : null,
     volumeH24: dex ? dex.volume && dex.volume.h24 : null,
     pairCreatedAt: dex ? dex.pairCreatedAt : null,
+    pairAddress: dex ? dex.pairAddress || null : null,
     exchangeRateUsd: o.exchangeRateUsd !== undefined && o.exchangeRateUsd !== null ? o.exchangeRateUsd : null,
     circulatingMarketCap:
       o.circulatingMarketCap !== undefined && o.circulatingMarketCap !== null
@@ -216,6 +232,12 @@ async function loadFeedRows(chainKey, feed) {
     if (CHAINS[chainKey].supportsBlockscout === false) return [];
     return loadMostHeld(chainKey);
   }
+  if (feed === "watch") {
+    const watched = watchlist.listForChain(chainKey);
+    if (!watched.length) return [];
+    const candidates = watched.map((w) => ({ chainId: CHAINS[chainKey].dexId, tokenAddress: w.address }));
+    return enrichTokensAsRows(chainKey, candidates, "watch");
+  }
   const discovery = await loadDiscoveryFeeds(false);
   const source = feed === "new" ? discovery.profiles : discovery.boosts;
   return enrichTokensAsRows(chainKey, source, feed);
@@ -223,7 +245,10 @@ async function loadFeedRows(chainKey, feed) {
 
 /** Cached, resilient entry point used by both the HTTP routes and the background monitor. */
 function getRows(chainKey, feed) {
-  return cached(`coins:${chainKey}:${feed}`, () => loadFeedRows(chainKey, feed), { ttlMs: ROW_TTL_MS });
+  // The watchlist can change between two requests a user makes seconds apart (star/unstar) —
+  // cache it very briefly rather than not at all, mainly to coalesce concurrent requests.
+  const ttlMs = feed === "watch" ? 5000 : ROW_TTL_MS;
+  return cached(`coins:${chainKey}:${feed}`, () => loadFeedRows(chainKey, feed), { ttlMs });
 }
 
 function runSearch(query, chainKey) {

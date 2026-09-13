@@ -16,6 +16,9 @@
     </div>
     <div class="head-actions">
       <span class="live-pill" id="livePill"><span class="pulse"></span><span id="livePillText">Connecting…</span></span>
+      <button class="settings-btn" id="notifyToggleBtn" type="button" title="Get a system notification for threshold and watchlist alerts while this tab is open">
+        <span class="dot" id="notifyDot"></span> Browser alerts
+      </button>
       <button class="settings-btn" id="openSettings" type="button">
         <span class="dot" id="webhookDot"></span> Discord alerts
       </button>
@@ -55,15 +58,18 @@
           <button class="feed-tab active" data-feed="mostheld" type="button">Most held</button>
           <button class="feed-tab" data-feed="new" type="button">Freshly listed</button>
           <button class="feed-tab" data-feed="boosted" type="button">Trending now</button>
+          <button class="feed-tab" data-feed="watch" type="button">★ Watching</button>
         </div>
         <div class="toolbar-right">
           <select class="sort-select" id="sortSelect"></select>
+          <button class="icon-btn" id="autoRefreshToggleBtn" type="button" title="Pause auto-refresh">⏸</button>
           <button class="icon-btn" id="refreshBtn" type="button" title="Refresh">↻</button>
         </div>
       </div>
 
       <div id="coinListBanner"></div>
       <div id="coinListWrap"><div class="ledger" id="coinList"></div></div>
+      <div class="live-status" id="liveStatus"></div>
     </section>
 
     <section class="block">
@@ -147,7 +153,7 @@
       <input type="number" id="thresholdInput" placeholder="e.g. 20000" min="0" step="100" inputmode="decimal">
       <button class="btn secondary" id="saveThreshold" type="button">Save</button>
     </div>
-    <p class="field-hint">Trailhead checks live liquidity in the background and posts to your webhook (with <strong>@everyone</strong>) the moment a token's liquidity is at or above this amount. Leave it empty to turn alerts off.</p>
+    <p class="field-hint">Trailhead checks live liquidity in the background and, the moment a token's liquidity is at or above this amount, posts to your webhook (with <strong>@everyone</strong>) if one's set below, and/or shows a system notification if Browser alerts (top right) is on — you don't need a webhook for the browser-only option. Alerts re-arm if a token drops back below and crosses again. Leave the threshold empty to turn this off.</p>
 
     <div class="monitor-status" id="monitorStatus"></div>
 

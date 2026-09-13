@@ -19,8 +19,11 @@
     mostheld: [["holders", "Sort: Holders"], ["marketcap", "Sort: Market cap"], ["liquidity", "Sort: Liquidity (if trading)"], ["change", "Sort: 24h change (if trading)"]],
     new: [["liquidity", "Sort: Liquidity"], ["volume", "Sort: 24h volume"], ["newest", "Sort: Newest"], ["change", "Sort: 24h change"]],
     boosted: [["liquidity", "Sort: Liquidity"], ["volume", "Sort: 24h volume"], ["newest", "Sort: Newest"], ["change", "Sort: 24h change"]],
+    watch: [["liquidity", "Sort: Liquidity"], ["volume", "Sort: 24h volume"], ["newest", "Sort: Newest"], ["change", "Sort: 24h change"]],
     search: [["liquidity", "Sort: Liquidity"], ["volume", "Sort: 24h volume"], ["newest", "Sort: Newest"], ["change", "Sort: 24h change"]]
   };
+
+  var WATCH_MOVE_PCT = 15; // must match server/lib/monitor.js — for the settings-hint text only
 
   var state = {
     chain: "ethereum",
@@ -33,7 +36,19 @@
     nftByAddress: {},
     lastGoodAt: null,
     lastAttemptOk: true,
-    settings: { liquidityThreshold: null, webhookConfigured: false, monitor: null }
+    settings: { liquidityThreshold: null, webhookConfigured: false, monitor: null },
+
+    watchlist: {}, // key "chain:address" -> {chain,address,symbol,name}
+    whaleExpanded: {}, // key "chain:address" -> bool
+    whaleResults: {}, // key "chain:address" -> {status, ...}
+
+    notifyEnabled: loadLocalFlag("trailhead:notifyEnabled", false),
+    autoRefresh: loadLocalFlag("trailhead:autoRefresh", true),
+    lastEventId: 0,
+
+    coinListStatusKind: "idle",
+    coinListUpdatedAt: null,
+    nextPollAt: null
   };
 
   // ---------- utils ----------
@@ -149,6 +164,12 @@
     return { label: "Widely held", level: "good" };
   }
 
+  // A real, on-chain "buzz" signal: genuine 1h price move backed by more buys than sells.
+  function isHeatingUp(row) {
+    if (row.priceChangeH1 == null || row.buysH1 == null || row.sellsH1 == null) return false;
+    return numOr0(row.priceChangeH1) >= 20 && row.buysH1 > row.sellsH1;
+  }
+
   function ageTier(ts) {
     var n = numOr0(ts);
     if (!n) return null;
@@ -184,6 +205,19 @@
       try { var r = fn(item); if (r) out.push(r); } catch (e) { /* skip malformed item */ }
     });
     return out;
+  }
+
+  // Per-browser-only preferences (notification opt-in, auto-refresh pause) — never
+  // anything that needs to be shared across devices or kept secret.
+  function loadLocalFlag(key, fallback) {
+    try {
+      var v = window.localStorage.getItem(key);
+      if (v === null) return fallback;
+      return v === "1";
+    } catch (e) { return fallback; }
+  }
+  function saveLocalFlag(key, value) {
+    try { window.localStorage.setItem(key, value ? "1" : "0"); } catch (e) { /* best effort */ }
   }
 
   function jsonFetch(url, opts) {
@@ -243,6 +277,113 @@
     btn.classList.toggle("partial", !armed && !!partial);
   }
 
+  // ---------- watchlist ----------
+  // A personal star-list, independent of chain/feed, kept server-side so the
+  // background monitor can check watched coins for a big move even while no
+  // browser tab is open (only actually *notifying* you needs a tab open —
+  // see "browser notifications" below).
+  function watchKey(chain, address) { return chain + ":" + (address || "").toLowerCase(); }
+
+  function isWatched(chain, address) { return !!state.watchlist[watchKey(chain, address)]; }
+
+  function loadWatchlist() {
+    return jsonFetch("/api/watchlist").then(function (body) {
+      state.watchlist = {};
+      (body.data || []).forEach(function (w) { state.watchlist[watchKey(w.chain, w.address)] = w; });
+    });
+  }
+
+  function toggleWatch(address) {
+    var chain = state.chain;
+    if (isWatched(chain, address)) {
+      var removedSym = state.watchlist[watchKey(chain, address)].symbol;
+      delete state.watchlist[watchKey(chain, address)];
+      showToast((removedSym || "Coin") + " removed from your watchlist.", "ok");
+      jsonFetch("/api/watchlist/" + chain + "/" + address, { method: "DELETE" }).catch(function () {});
+    } else {
+      var row = state.rowsByAddress[address];
+      var meta = { chain: chain, address: address, symbol: (row && row.symbol) || "?", name: (row && row.name) || "" };
+      state.watchlist[watchKey(chain, address)] = meta;
+      showToast((meta.symbol) + " starred — you'll get a notification here on a big move, even from another chain or tab.", "ok");
+      jsonFetch("/api/watchlist", {
+        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(meta)
+      }).catch(function () {});
+    }
+    renderLiveStatus();
+    if (state.feed === "watch") refreshCoinList(true);
+    else if (state.currentRows && state.currentRows.length) renderRows(state.currentRows);
+  }
+
+  // ---------- browser notifications ----------
+  // A real system notification (separate from the Discord webhook) that can
+  // reach you while this tab is unfocused. Detection itself always runs
+  // server-side (see server/lib/monitor.js) so it works even with no tab
+  // open at all — this only covers turning a detected event into an actual
+  // OS notification, which needs a page context to do at all.
+  function updateNotifyDot() {
+    var btn = document.getElementById("notifyToggleBtn");
+    var live = state.notifyEnabled && ("Notification" in window) && Notification.permission === "granted";
+    btn.classList.toggle("on", live);
+  }
+
+  function toggleNotify() {
+    if (!("Notification" in window)) {
+      showToast("This browser doesn't support desktop notifications here — Discord alerts (top right) still work everywhere.", "warn");
+      return;
+    }
+    if (state.notifyEnabled) {
+      state.notifyEnabled = false;
+      saveLocalFlag("trailhead:notifyEnabled", false);
+      updateNotifyDot();
+      showToast("Browser alerts off.", "ok");
+      return;
+    }
+    Notification.requestPermission().then(function (perm) {
+      if (perm === "granted") {
+        state.notifyEnabled = true;
+        saveLocalFlag("trailhead:notifyEnabled", true);
+        showToast("Browser alerts on — threshold and watchlist alerts will show up as a system notification while this tab is open (backgrounded tabs may lag a little).", "ok");
+      } else {
+        showToast("Notifications are blocked for this page — allow them in your browser's site settings to use this.", "warn");
+      }
+      updateNotifyDot();
+    }).catch(function () {
+      showToast("Couldn't request notification permission here.", "err");
+    });
+  }
+
+  function sendBrowserNotification(title, body, tag) {
+    if (!state.notifyEnabled || !("Notification" in window) || Notification.permission !== "granted") return;
+    try {
+      var n = new Notification(title, { body: body, tag: tag });
+      n.onclick = function () { window.focus(); n.close(); };
+    } catch (e) { /* some mobile browsers only allow this from an installed PWA */ }
+  }
+
+  // Polls for anything the background monitor has detected since our last
+  // check (liquidity-threshold crossings, watchlist moves) and turns each
+  // into a notification/toast. The detection and any Discord send already
+  // happened server-side regardless of whether this ever runs.
+  function pollEvents() {
+    return jsonFetch("/api/events/since?after=" + state.lastEventId).then(function (body) {
+      if (!body || !body.ok) return;
+      (body.data || []).forEach(function (evt) {
+        sendBrowserNotification(evt.title, evt.body, evt.type + "-" + evt.address);
+        if (evt.type === "watch") showToast(evt.body, "ok");
+      });
+      state.lastEventId = body.latestId || state.lastEventId;
+    }).catch(function () { /* best effort — next poll tries again */ });
+  }
+
+  // Sets the "since" cursor to whatever's already buffered at load time, without
+  // acting on any of it — opening the page shouldn't replay a backlog of
+  // notifications for things that happened before this session started.
+  function initEventBaseline() {
+    return jsonFetch("/api/events/since?after=0").then(function (body) {
+      if (body && body.ok) state.lastEventId = body.latestId || 0;
+    }).catch(function () { /* fine — first real poll will just start from 0 */ });
+  }
+
   // ---------- rendering: chain tabs / notes ----------
   function renderChainTabs() {
     var el = document.getElementById("chainTabs");
@@ -290,16 +431,23 @@
       badges += '<span class="chip chip-ok">No live trading pair found</span>';
     }
     if (row.boosted) badges += '<span class="chip chip-boost">Paid promotion</span>';
+    if (isHeatingUp(row)) badges += '<span class="chip chip-hot">🔥 Heating up (1h)</span>';
 
     var statsHtml;
     if (row.hasDex) {
       var chgClass = numOr0(row.priceChangeH24) > 0 ? "pos" : (numOr0(row.priceChangeH24) < 0 ? "neg" : "");
+      var chgClass1h = numOr0(row.priceChangeH1) > 0 ? "pos" : (numOr0(row.priceChangeH1) < 0 ? "neg" : "");
+      var activity = row.buysH1 != null
+        ? (row.buysH1 + " buy" + (row.buysH1 === 1 ? "" : "s") + " / " + row.sellsH1 + " sell" + (row.sellsH1 === 1 ? "" : "s"))
+        : "—";
       statsHtml =
         statHTML("price", formatPrice(row.priceUsd)) +
+        statHTML("1h", formatPct(row.priceChangeH1), chgClass1h) +
         statHTML("24h", formatPct(row.priceChangeH24), chgClass) +
         statHTML("liquidity", formatCompact(row.liquidityUsd)) +
         statHTML("vol 24h", formatCompact(row.volumeH24)) +
-        statHTML("age", formatAge(row.pairCreatedAt));
+        statHTML("age", formatAge(row.pairCreatedAt)) +
+        statHTML("txns 1h", activity);
     } else {
       var priceVal = row.exchangeRateUsd;
       statsHtml =
@@ -309,21 +457,35 @@
         statHTML("mkt cap", row.circulatingMarketCap != null ? formatCompact(row.circulatingMarketCap) : "—");
     }
 
+    var watched = isWatched(state.chain, row.address);
+    var starHtml = '<button class="watch-star' + (watched ? " on" : "") + '" data-action="watch" data-address="' +
+      escapeHtml(row.address) + '" type="button" title="' + (watched ? "Stop watching — remove from your starred list" : "Watch this coin — get notified on big moves, even from another chain or tab") +
+      '" aria-pressed="' + watched + '">' + (watched ? "★" : "☆") + '</button>';
+
     var actionsHtml = "";
     if (row.chartUrl) actionsHtml += '<a class="btn-ghost" href="' + escapeHtml(row.chartUrl) + '" target="_blank" rel="noopener noreferrer">View chart</a>';
     actionsHtml += '<a class="btn-ghost" href="' + escapeHtml(row.explorerUrl) + '" target="_blank" rel="noopener noreferrer">View on explorer</a>';
     actionsHtml += '<button class="btn-ghost" data-action="copy" data-address="' + escapeHtml(row.address) + '" title="' + escapeHtml(row.address) + '">Copy ' + escapeHtml(shortAddr(row.address)) + '</button>';
     actionsHtml += '<button class="btn-primary-sm" data-action="discord" data-address="' + escapeHtml(row.address) + '">Send to Discord</button>';
+    if (row.pairAddress && CHAINS[row.chainKey || state.chain] && CHAINS[row.chainKey || state.chain].supportsBlockscout !== false) {
+      var wKey = whaleKey(state.chain, row.address);
+      var whaleActive = !!state.whaleExpanded[wKey];
+      var whaleResult = state.whaleResults[wKey];
+      var whaleHasHits = whaleResult && whaleResult.status === "done" && ((whaleResult.buyWhales || []).length || (whaleResult.sellWhales || []).length);
+      actionsHtml += '<button class="btn-ghost whale-btn' + (whaleHasHits ? " has-whales" : "") + '" data-action="whale" data-address="' + escapeHtml(row.address) + '" aria-expanded="' + whaleActive + '">' +
+        (whaleActive ? "Hide" : "🐋") + ' whale check</button>';
+    }
 
     return (
       '<div class="row" data-address="' + escapeHtml(row.address) + '">' +
         '<div class="row-icon">' + iconHtml + '</div>' +
         '<div class="row-main">' +
-          '<div class="row-title"><span class="sym">' + escapeHtml(symbol) + '</span><span class="name">' + escapeHtml(row.name) + '</span></div>' +
+          '<div class="row-title">' + starHtml + '<span class="sym">' + escapeHtml(symbol) + '</span><span class="name">' + escapeHtml(row.name) + '</span></div>' +
           '<div class="row-badges">' + badges + '</div>' +
         '</div>' +
         '<div class="row-stats">' + statsHtml + '</div>' +
         '<div class="row-actions">' + actionsHtml + '</div>' +
+        whalePanelHTML(state.chain, row) +
       '</div>'
     );
   }
@@ -369,26 +531,88 @@
     sel.value = state.sort;
   }
 
+  // ---------- live status line (below the list) ----------
+  function setCoinListStatus(kind) {
+    state.coinListStatusKind = kind;
+    renderLiveStatus();
+  }
+
+  // Re-renders on a 1s ticker (see init) so "updated Xs ago" / the refresh
+  // countdown move smoothly without a network call.
+  function renderLiveStatus() {
+    var el = document.getElementById("liveStatus");
+    if (!el) return;
+    var kind = state.coinListStatusKind;
+    if (kind === "updating") {
+      el.className = "live-status";
+      el.textContent = "Updating…";
+    } else if (kind === "error") {
+      el.className = "live-status err";
+      el.textContent = "⚠ Couldn't refresh just now — still showing data from " + formatRelative(state.coinListUpdatedAt) + ". Retrying automatically.";
+    } else if (kind === "ok") {
+      el.className = "live-status";
+      var bits = ["Live · updated " + formatRelative(state.coinListUpdatedAt)];
+      if (!state.searchActive) {
+        if (state.autoRefresh && state.nextPollAt) bits.push("next refresh in " + Math.max(0, Math.round((state.nextPollAt - Date.now()) / 1000)) + "s");
+        else if (!state.autoRefresh) bits.push("auto-refresh paused");
+      }
+      var threshold = state.settings.liquidityThreshold;
+      if (threshold != null) bits.push(state.settings.monitor && state.settings.monitor.discordAlertsEnabled ? "Discord + threshold alerts on" : "threshold alerts on");
+      var watchCount = Object.keys(state.watchlist).length;
+      if (watchCount) bits.push(watchCount + " watched");
+      el.textContent = bits.join(" · ");
+    } else {
+      el.className = "live-status";
+      el.textContent = "";
+    }
+  }
+  setInterval(function () {
+    if (state.coinListStatusKind === "ok") renderLiveStatus();
+  }, 1000);
+
+  // ---------- auto-refresh pause/resume ----------
+  function updateAutoRefreshUI() {
+    var btn = document.getElementById("autoRefreshToggleBtn");
+    btn.textContent = state.autoRefresh ? "⏸" : "▶";
+    btn.title = state.autoRefresh ? "Pause auto-refresh (alerts keep running in the background either way)" : "Resume auto-refresh";
+    btn.classList.toggle("paused", !state.autoRefresh);
+    renderLiveStatus();
+  }
+
+  function toggleAutoRefresh() {
+    state.autoRefresh = !state.autoRefresh;
+    saveLocalFlag("trailhead:autoRefresh", state.autoRefresh);
+    updateAutoRefreshUI();
+    showToast(state.autoRefresh ? "Auto-refresh resumed." : "Auto-refresh paused — threshold/watchlist alerts keep running regardless.", "ok");
+  }
+
   // ---------- coin data flow ----------
   function refreshCoinList(silent) {
     if (!silent) renderSkeleton();
+    if (state.currentRows && state.currentRows.length) setCoinListStatus("updating");
     return jsonFetch("/api/coins/" + state.chain + "/" + state.feed).then(function (body) {
       if (body.ok) {
         markFetchOutcome(true);
+        state.coinListUpdatedAt = Date.now();
         renderBanner("coinListBanner", body.warning, null, null);
         renderRows((body.data || []).slice().sort(SORT_FNS[state.sort]));
+        setCoinListStatus("ok");
       } else if (body.data && body.data.length) {
         markFetchOutcome(false);
         renderBanner("coinListBanner", body.message, null, null);
+        setCoinListStatus(state.currentRows.length ? "error" : "idle");
       } else {
         markFetchOutcome(false);
-        if (!silent || state.currentRows.length === 0) {
+        if (state.currentRows.length) {
+          setCoinListStatus("error");
+        } else if (!silent) {
           renderBanner("coinListBanner", null, body.message || "Live data hasn't loaded yet.", function () { refreshCoinList(false); });
-          if (!state.currentRows.length) document.getElementById("coinList").innerHTML = "";
+          document.getElementById("coinList").innerHTML = "";
         }
       }
     }).catch(function () {
       markFetchOutcome(false);
+      if (state.currentRows.length) setCoinListStatus("error");
     });
   }
 
@@ -402,14 +626,18 @@
     state.searchActive = true;
     updateSortOptions("search");
     renderSkeleton();
+    setCoinListStatus("updating");
     return jsonFetch("/api/coins/" + state.chain + "/search?q=" + encodeURIComponent(q)).then(function (body) {
       if (body.ok) {
         markFetchOutcome(true);
+        state.coinListUpdatedAt = Date.now();
         renderBanner("coinListBanner", body.warning, null, null);
         renderRows((body.data || []).slice().sort(SORT_FNS[state.sort]));
+        setCoinListStatus("ok");
       } else {
         markFetchOutcome(false);
         renderBanner("coinListBanner", null, body.message || "Search is temporarily unavailable.", doSearch);
+        setCoinListStatus("idle");
       }
     });
   }
@@ -417,7 +645,9 @@
   function switchChain(key, force) {
     state.chain = key;
     state.searchActive = false;
+    state.currentRows = [];
     document.getElementById("searchInput").value = "";
+    setCoinListStatus("idle");
     updateChainUI();
     return Promise.all([refreshCoinList(false), ensureNftLoaded(key)]);
   }
@@ -691,16 +921,95 @@
     }
   }
 
+  // ---------- whale check (on-demand, per coin) ----------
+  function whaleKey(chain, address) { return chain + ":" + address; }
+
+  function whaleFmtUsd(n) { return formatCompact(n); }
+
+  function toggleWhalePanel(chain, address) {
+    var key = whaleKey(chain, address);
+    state.whaleExpanded[key] = !state.whaleExpanded[key];
+    var existing = state.whaleResults[key];
+    if (state.whaleExpanded[key] && (!existing || existing.status === "error")) {
+      runWhaleCheck(chain, address);
+    } else {
+      renderRows(state.currentRows);
+    }
+  }
+
+  function runWhaleCheck(chain, address) {
+    var key = whaleKey(chain, address);
+    var row = state.rowsByAddress[address];
+    if (!row || !row.pairAddress) {
+      state.whaleResults[key] = { status: "error", message: "No trading-pool address on file for this coin yet — refresh the list and try again." };
+      renderRows(state.currentRows);
+      return;
+    }
+    state.whaleResults[key] = { status: "loading" };
+    renderRows(state.currentRows);
+    jsonFetch("/api/whale/" + chain + "/" + address + "?pairAddress=" + encodeURIComponent(row.pairAddress)).then(function (result) {
+      state.whaleResults[key] = result;
+      if (state.rowsByAddress[address]) renderRows(state.currentRows);
+    }).catch(function () {
+      state.whaleResults[key] = { status: "error", message: "Couldn't run the whale check right now — try again in a bit." };
+      if (state.rowsByAddress[address]) renderRows(state.currentRows);
+    });
+  }
+
+  function whalePanelHTML(chain, row) {
+    var key = whaleKey(chain, row.address);
+    if (!state.whaleExpanded[key]) return "";
+    var result = state.whaleResults[key];
+    var inner;
+    if (!result || result.status === "loading") {
+      inner = '<div class="whale-line">Checking recent buyers and sellers against ' + escapeHtml((CHAINS[chain] && CHAINS[chain].explorerLabel) || "the explorer") + '’s balance data…</div>';
+    } else if (result.status === "error") {
+      inner = '<div class="whale-line">' + escapeHtml(result.message || "Couldn't run the whale check.") + '</div>' +
+        '<button class="whale-toggle-link" data-action="whale-recheck" data-address="' + escapeHtml(row.address) + '" type="button">Try again</button>';
+    } else {
+      var buy = result.buyWhales || [], sell = result.sellWhales || [];
+      if (!buy.length && !sell.length) {
+        inner = '<div class="whale-line">No wallets holding $' + formatCompactNumber(100000) + '+ found among the ' +
+          (result.buyChecked + result.sellChecked) + ' recent buyer/seller wallet(s) checked.</div>' +
+          '<div class="whale-note">Only sees this coin’s main pool, and each wallet’s balance right now — not at trade time.</div>';
+      } else {
+        var buyLine = '<div class="whale-line"><span class="whale-count pos">' + buy.length + '</span> buyer(s) currently holding $100k+' +
+          (buy.length ? ':' : '.') + '</div>';
+        var buyList = buy.length ? '<ul class="whale-list">' + buy.map(function (w) {
+          return '<li><span>' + escapeHtml(shortAddr(w.address)) + '</span><span>' + whaleFmtUsd(w.usd) + '</span></li>';
+        }).join("") + '</ul>' : "";
+        var sellLine = '<div class="whale-line" style="margin-top:8px;"><span class="whale-count">' + sell.length + '</span> seller(s) currently holding $100k+' +
+          (sell.length ? ':' : '.') + '</div>';
+        var sellList = sell.length ? '<ul class="whale-list">' + sell.map(function (w) {
+          return '<li><span>' + escapeHtml(shortAddr(w.address)) + '</span><span>' + whaleFmtUsd(w.usd) + '</span></li>';
+        }).join("") + '</ul>' : "";
+        inner = buyLine + buyList + sellLine + sellList +
+          '<div class="whale-note">Balances are each wallet’s current holdings, not their size at the moment of the trade. Only this coin’s main pool is scanned.</div>';
+      }
+    }
+    return '<div class="whale-panel">' + inner + '</div>';
+  }
+
   // ---------- settings modal ----------
   function renderMonitorStatus() {
     var el = document.getElementById("monitorStatus");
     var s = state.settings;
     var mon = s.monitor || {};
     var lines = [];
-    var armed = s.webhookConfigured && s.liquidityThreshold != null;
-    lines.push(['Alerts', armed ? "Armed — watching live liquidity" : (s.webhookConfigured ? "Off — set a threshold above" : "Off — add a webhook below")]);
+    var browserReady = state.notifyEnabled && ("Notification" in window) && Notification.permission === "granted";
+    var thresholdSet = s.liquidityThreshold != null;
+    var channels = [];
+    if (mon.discordAlertsEnabled) channels.push("Discord");
+    if (thresholdSet && browserReady) channels.push("Browser alerts");
+    var status;
+    if (!thresholdSet) status = "Off — set a threshold above";
+    else if (!channels.length) status = "Threshold set, but nothing's connected — add a webhook or turn on Browser alerts (top right)";
+    else status = "Armed — watching live liquidity, delivering via " + channels.join(" and ");
+    lines.push(['Alerts', status]);
     if (mon.lastTickAt) lines.push(['Last check', formatRelative(mon.lastTickAt)]);
-    if (mon.alertsSent) lines.push(['Alerts sent', String(mon.alertsSent) + (mon.lastAlertAt ? " (last " + formatRelative(mon.lastAlertAt) + ")" : "")]);
+    if (mon.alertsSent) lines.push(['Discord alerts sent', String(mon.alertsSent) + (mon.lastAlertAt ? " (last " + formatRelative(mon.lastAlertAt) + ")" : "")]);
+    var watchCount = Object.keys(state.watchlist).length;
+    if (watchCount) lines.push(['Watching', watchCount + " coin" + (watchCount === 1 ? "" : "s") + " for big 1h moves"]);
     el.innerHTML = lines.map(function (l) {
       return '<div class="row-line"><span>' + escapeHtml(l[0]) + '</span><span class="mono">' + escapeHtml(l[1]) + '</span></div>';
     }).join("");
@@ -826,7 +1135,9 @@
       state.feed = btn.getAttribute("data-feed");
       document.querySelectorAll(".feed-tab").forEach(function (b) { b.classList.toggle("active", b === btn); });
       state.searchActive = false;
+      state.currentRows = [];
       document.getElementById("searchInput").value = "";
+      setCoinListStatus("idle");
       updateSortOptions(state.feed);
       refreshCoinList(false);
     });
@@ -843,6 +1154,9 @@
       (state.searchActive ? doSearch() : refreshCoinList(false)).then(done).catch(done);
     });
 
+    document.getElementById("autoRefreshToggleBtn").addEventListener("click", toggleAutoRefresh);
+    document.getElementById("notifyToggleBtn").addEventListener("click", toggleNotify);
+
     document.getElementById("nftRefreshBtn").addEventListener("click", function () {
       var icon = document.getElementById("nftRefreshBtn");
       icon.classList.add("spinning");
@@ -856,8 +1170,12 @@
       var btn = e.target.closest("[data-action]");
       if (!btn) return;
       var addr = btn.getAttribute("data-address");
-      if (btn.getAttribute("data-action") === "copy") copyAddress(addr);
-      if (btn.getAttribute("data-action") === "discord") sendCoinToDiscord(addr);
+      var action = btn.getAttribute("data-action");
+      if (action === "copy") copyAddress(addr);
+      if (action === "discord") sendCoinToDiscord(addr);
+      if (action === "watch") toggleWatch(addr);
+      if (action === "whale") toggleWhalePanel(state.chain, addr);
+      if (action === "whale-recheck") runWhaleCheck(state.chain, addr);
     });
 
     document.getElementById("nftList").addEventListener("click", function (e) {
@@ -886,20 +1204,29 @@
   }
 
   // ---------- background polling (keeps data "real-time" without a full reload) ----------
+  // Events (browser-notification pickup) and settings poll regardless of the
+  // auto-refresh toggle — that toggle only pauses the visible list repaint;
+  // alert detection is server-side and never stops.
   function backgroundPoll() {
     if (document.visibilityState !== "visible") return;
-    if (!state.searchActive) refreshCoinList(true);
+    if (state.autoRefresh && !state.searchActive) refreshCoinList(true);
+    state.nextPollAt = Date.now() + POLL_MS;
     loadSettings();
+    loadWatchlist();
+    pollEvents();
   }
   setInterval(backgroundPoll, POLL_MS);
 
   // ---------- init ----------
   function init() {
     bindEvents();
-    Promise.all([loadChains(), loadSettings()]).then(function () {
+    updateAutoRefreshUI();
+    updateNotifyDot();
+    Promise.all([loadChains(), loadSettings(), loadWatchlist(), initEventBaseline()]).then(function () {
       renderChainTabs();
       updateChainUI();
       updateSortOptions(state.feed);
+      state.nextPollAt = Date.now() + POLL_MS;
       switchChain("ethereum", false);
     });
   }
