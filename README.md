@@ -66,6 +66,29 @@ process and work with zero code changes:
    paid instance type — Render's free tier has no persistent disks, so
    `data/settings.json` will reset on every redeploy/restart there).
 
+### Deploying to Vercel anyway
+
+If you still want it reachable on Vercel (e.g. just to see the dashboard),
+pick **Other** as the framework when importing the repo — this project ships
+a `vercel.json` + `api/index.js` that wrap the same Express app as a
+serverless function, so it deploys instead of 404ing. Two things are
+different there, and there's no way around them on serverless:
+
+- **The background monitor never starts.** `api/index.js` intentionally
+  doesn't call it — a `setInterval` loop can't survive between requests on
+  a serverless function, so automatic liquidity alerts will not fire on
+  Vercel. The manual "Send to Discord" buttons still work fine.
+- **Settings don't persist.** Threshold/webhook/alert-history are written to
+  `/tmp` instead of erroring, so saving them won't crash a request — but
+  `/tmp` is wiped on cold starts and redeploys, so expect to re-enter them
+  periodically.
+
+Add `TRAILHEAD_PASSWORD` as a Vercel Environment Variable the same way as
+above if you want the password gate. If you outgrow this and want real
+automatic alerts on Vercel, that needs Vercel Cron (calling an endpoint on a
+schedule) plus an external store like Vercel KV/Upstash Redis instead of
+`data/settings.json` — ask if you want that built out.
+
 Either way, once it's deployed, open the URL, set your liquidity threshold
 and Discord webhook the same way you would locally — the background monitor
 runs automatically as long as the service is up.
