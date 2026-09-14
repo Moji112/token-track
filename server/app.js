@@ -16,6 +16,7 @@ const discordRoute = require("./routes/discord");
 const watchlistRoute = require("./routes/watchlist");
 const eventsRoute = require("./routes/events");
 const whaleRoute = require("./routes/whale");
+const cronRoute = require("./routes/cron");
 const auth = require("./lib/auth");
 
 const app = express();
@@ -37,6 +38,7 @@ app.use("/api/discord", discordRoute);
 app.use("/api/watchlist", watchlistRoute);
 app.use("/api/events", eventsRoute);
 app.use("/api/whale", whaleRoute);
+app.use("/api/cron", cronRoute);
 
 // Named "webapp", not "public" — Vercel treats a top-level "public/" folder as
 // its implicit static-asset output and serves it directly, bypassing this

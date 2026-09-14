@@ -177,6 +177,9 @@ const LOGIN_PAGE_HTML = `<!doctype html>
 function gate(req, res, next) {
   if (!isEnabled()) return next();
   if (req.path === "/api/auth/login" || req.path === "/api/auth/logout") return next();
+  // Vercel Cron calls this with no session — it's protected separately by
+  // CRON_SECRET in server/routes/cron.js instead of the password gate.
+  if (req.path === "/api/cron/tick") return next();
   if (hasValidSession(req)) return next();
 
   if (req.path.startsWith("/api/")) {

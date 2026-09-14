@@ -1018,12 +1018,19 @@
 
   function openSettingsModal() {
     loadSettings().then(function () {
+      var envManaged = !!state.settings.envManaged;
       document.getElementById("thresholdInput").value = state.settings.liquidityThreshold != null ? state.settings.liquidityThreshold : "";
       document.getElementById("webhookUrlInput").value = "";
       document.getElementById("webhookUrlInput").placeholder = state.settings.webhookConfigured
         ? "•••• a webhook is already saved — paste a new one to replace it"
         : "https://discord.com/api/webhooks/…";
-      document.getElementById("webhookStatus").textContent = "";
+      document.getElementById("webhookStatus").textContent = envManaged
+        ? "The threshold and/or webhook are set via environment variables on this deployment — edit them there instead of here."
+        : "";
+      document.getElementById("webhookStatus").className = envManaged ? "modal-status" : "";
+      ["thresholdInput", "saveThreshold", "webhookUrlInput", "saveWebhook", "clearWebhook"].forEach(function (id) {
+        document.getElementById(id).disabled = envManaged;
+      });
       renderMonitorStatus();
       document.getElementById("settingsOverlay").classList.add("open");
       document.getElementById("thresholdInput").focus();

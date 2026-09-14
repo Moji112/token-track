@@ -71,30 +71,53 @@ process and work with zero code changes:
 
 ### Deploying to Vercel anyway
 
-If you still want it reachable on Vercel (e.g. just to see the dashboard),
-pick **Other** as the framework when importing the repo — this project ships
-a `vercel.json` + `api/index.js` that wrap the same Express app as a
-serverless function, so it deploys instead of 404ing. Two things are
-different there, and there's no way around them on serverless:
+If you still want it on Vercel, pick **Other** as the framework when
+importing the repo — this project ships a `vercel.json` + `api/index.js`
+that wrap the same Express app as a serverless function. Add
+`TRAILHEAD_PASSWORD` as a Vercel Environment Variable if you want the
+password gate there too.
 
-- **The background monitor never starts.** `api/index.js` intentionally
-  doesn't call it — a `setInterval` loop can't survive between requests on
-  a serverless function, so automatic liquidity alerts will not fire on
-  Vercel. The manual "Send to Discord" buttons still work fine.
-- **Settings don't persist.** Threshold/webhook/alert-history are written to
-  `/tmp` instead of erroring, so saving them won't crash a request — but
-  `/tmp` is wiped on cold starts and redeploys, so expect to re-enter them
-  periodically.
+**Automatic alerts on Vercel need Cron + environment-variable settings —
+the in-app Settings UI alone won't work there.** Two things are different
+on serverless, both handled by `server/routes/cron.js` +
+`server/lib/settingsService.js`'s environment-variable overrides:
 
-Add `TRAILHEAD_PASSWORD` as a Vercel Environment Variable the same way as
-above if you want the password gate. If you outgrow this and want real
-automatic alerts on Vercel, that needs Vercel Cron (calling an endpoint on a
-schedule) plus an external store like Vercel KV/Upstash Redis instead of
-`data/settings.json` — ask if you want that built out.
+- A `setInterval` loop can't survive between serverless invocations, so
+  nothing runs the monitor on its own. `vercel.json` declares a Cron Job
+  hitting `/api/cron/tick` on a schedule instead, which runs one check cycle
+  and returns. **Vercel's Hobby plan only allows a cron to run once per
+  day** — the default schedule (`"0 0 * * *"`, midnight UTC) is set
+  conservatively for that. On Pro, edit the schedule in `vercel.json` to
+  something like `"*/5 * * * *"` for near-real-time checks.
+- Local storage (`data/settings.json`, living in `/tmp` on Vercel) isn't
+  shared between separate invocations, so a cron-triggered check wouldn't
+  see a webhook/threshold saved through the UI from a browser request.
+  Set these as Vercel Environment Variables instead, and they take priority
+  over the file store automatically:
+  - `TRAILHEAD_LIQUIDITY_THRESHOLD` — e.g. `20000`
+  - `TRAILHEAD_WEBHOOK_URL` — your Discord webhook URL
+  - `CRON_SECRET` — any random string; Vercel automatically sends it as a
+    Bearer token on cron calls, so set this too or the endpoint is callable
+    by anyone who finds it (it just runs a check cycle — not dangerous, but
+    still worth locking down)
 
-Either way, once it's deployed, open the URL, set your liquidity threshold
-and Discord webhook the same way you would locally — the background monitor
-runs automatically as long as the service is up.
+  With these set, the Settings UI shows the threshold/webhook as
+  environment-managed and refuses to change them there (edit the Vercel
+  env vars instead) — this keeps every invocation, cron included, seeing
+  the same values.
+
+One more caveat if you go past once-daily on Pro: the "don't alert twice
+for the same crossing" and watchlist-move dedupe state also live in that
+same non-shared `/tmp` file, so a several-times-a-minute cron could re-fire
+the same alert repeatedly instead of once. Fine at once-a-day; if you want
+frequent Cron without repeat spam, that needs real shared storage (Vercel
+KV or Upstash Redis) instead of the file store — ask if you want that built
+out.
+
+Either way, once it's deployed, open the URL — if you used environment
+variables for the webhook/threshold, alerts are already armed; if not, set
+them from Settings the same way as locally (this only actually gets checked
+by Cron, not by simply visiting the page).
 
 ## Configuring alerts
 

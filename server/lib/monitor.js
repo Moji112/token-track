@@ -184,4 +184,4 @@ function getStatus() {
   };
 }
 
-module.exports = { start, stop, getStatus };
+module.exports = { start, stop, getStatus, tick };

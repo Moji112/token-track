@@ -11,6 +11,7 @@ function publicSettings() {
   return {
     liquidityThreshold: settings.getLiquidityThreshold(),
     webhookConfigured: settings.isWebhookConfigured(),
+    envManaged: settings.isEnvManaged(),
     monitor: monitor.getStatus(),
   };
 }
@@ -38,8 +39,12 @@ router.put("/webhook", (req, res) => {
 });
 
 router.delete("/webhook", (req, res) => {
-  settings.clearWebhookUrl();
-  res.json({ ok: true, data: { webhookConfigured: false } });
+  try {
+    settings.clearWebhookUrl();
+    res.json({ ok: true, data: { webhookConfigured: false } });
+  } catch (err) {
+    res.status(err.status || 400).json({ ok: false, message: err.message });
+  }
 });
 
 router.post("/webhook/test", async (req, res) => {
