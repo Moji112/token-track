@@ -24,7 +24,11 @@ function blockscoutTokens(chainKey, type, sort, order) {
   if (sort) params.push("sort=" + encodeURIComponent(sort));
   if (order) params.push("order=" + encodeURIComponent(order));
   const qs = params.length ? "?" + params.join("&") : "";
-  return resilientFetchJSON(base + "/api/v2/tokens" + qs, { timeoutMs: 9000, retries: 2 }).then(
+  // Kept tight on purpose: a serverless function's execution ceiling (10s by
+  // default on Vercel Hobby) can be exceeded by our own retry/backoff before
+  // it ever gets to run — which kills the whole request instead of letting
+  // our "still loading, retrying" fallback handle it.
+  return resilientFetchJSON(base + "/api/v2/tokens" + qs, { timeoutMs: 7000, retries: 1 }).then(
     (data) => (data && data.items) || []
   );
 }
@@ -32,7 +36,7 @@ function blockscoutTokens(chainKey, type, sort, order) {
 function blockscoutInstances(chainKey, tokenAddress) {
   const base = CHAINS[chainKey].explorerUrl;
   return resilientFetchJSON(base + "/api/v2/tokens/" + tokenAddress + "/instances", {
-    timeoutMs: 9000,
+    timeoutMs: 7000,
     retries: 1,
   }).then((data) => (data && data.items) || []);
 }

@@ -14,7 +14,11 @@ function blockscoutTokens(chainKey, type, sort, order) {
   if (sort) params.push("sort=" + encodeURIComponent(sort));
   if (order) params.push("order=" + encodeURIComponent(order));
   const qs = params.length ? "?" + params.join("&") : "";
-  return resilientFetchJSON(base + "/api/v2/tokens" + qs, { timeoutMs: 9000, retries: 2 }).then(
+  // Kept tight on purpose: 2 attempts at 9s each (plus backoff) could exceed a
+  // serverless function's execution ceiling (10s by default on Vercel Hobby),
+  // which kills the whole request before our own retry/fallback logic ever
+  // gets to run — worse than just trying once and failing fast.
+  return resilientFetchJSON(base + "/api/v2/tokens" + qs, { timeoutMs: 7000, retries: 1 }).then(
     (data) => ((data && data.items) || []).slice(0, 24)
   );
 }
