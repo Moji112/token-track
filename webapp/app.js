@@ -42,6 +42,9 @@
     whaleExpanded: {}, // key "chain:address" -> bool
     whaleResults: {}, // key "chain:address" -> {status, ...}
 
+    nftFeed: "mostheld",
+    nftWatchlist: {}, // key "chain:address" -> {chain,address,symbol,name}
+
     notifyEnabled: loadLocalFlag("trailhead:notifyEnabled", false),
     autoRefresh: loadLocalFlag("trailhead:autoRefresh", true),
     lastEventId: 0,
@@ -312,6 +315,38 @@
     renderLiveStatus();
     if (state.feed === "watch") refreshCoinList(true);
     else if (state.currentRows && state.currentRows.length) renderRows(state.currentRows);
+  }
+
+  // ---------- NFT watchlist (separate from the coin watchlist — same server-side store, kind:"nft") ----------
+  function isNftWatched(chain, address) { return !!state.nftWatchlist[watchKey(chain, address)]; }
+
+  function loadNftWatchlist() {
+    return jsonFetch("/api/watchlist?kind=nft").then(function (body) {
+      state.nftWatchlist = {};
+      (body.data || []).forEach(function (w) { state.nftWatchlist[watchKey(w.chain, w.address)] = w; });
+    });
+  }
+
+  function toggleNftWatch(address) {
+    var chain = state.chain;
+    if (isNftWatched(chain, address)) {
+      var removedSym = state.nftWatchlist[watchKey(chain, address)].symbol;
+      delete state.nftWatchlist[watchKey(chain, address)];
+      showToast((removedSym || "Collection") + " removed from your watchlist.", "ok");
+      jsonFetch("/api/watchlist/" + chain + "/" + address + "?kind=nft", { method: "DELETE" }).catch(function () {});
+    } else {
+      var item = state.nftByAddress[address];
+      var meta = { kind: "nft", chain: chain, address: address, symbol: (item && item.symbol) || "?", name: (item && item.name) || "" };
+      state.nftWatchlist[watchKey(chain, address)] = meta;
+      showToast((meta.symbol) + " starred.", "ok");
+      jsonFetch("/api/watchlist", {
+        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(meta)
+      }).catch(function () {});
+    }
+    if (state.nftFeed === "watch") ensureNftLoaded(state.chain);
+    else if (state.nftByAddress && Object.keys(state.nftByAddress).length) {
+      renderNftList(Object.keys(state.nftByAddress).map(function (a) { return state.nftByAddress[a]; }), state.chain);
+    }
   }
 
   // ---------- browser notifications ----------
@@ -666,18 +701,24 @@
       ? '<img src="' + escapeHtml(iconUrl) + '" alt="" loading="lazy" onerror="this.parentElement.innerHTML=\'<span class=&quot;icon-fallback&quot;>' + escapeHtml(symbol.slice(0, 1)) + '</span>\'">'
       : '<span class="icon-fallback">' + escapeHtml(symbol.slice(0, 1)) + '</span>';
 
+    var watched = isNftWatched(chainKey, addr);
+    var starHtml = '<button class="watch-star' + (watched ? " on" : "") + '" data-nft-action="watch" data-address="' +
+      escapeHtml(addr) + '" type="button" title="' + (watched ? "Stop watching — remove from your starred list" : "Watch this collection") +
+      '" aria-pressed="' + watched + '">' + (watched ? "★" : "☆") + '</button>';
+
+    var statsHtml = statHTML("holders", holders != null ? holders.toLocaleString("en-US") : "—") +
+      statHTML("items", supplyDisp != null ? formatCompactNumber(supplyDisp) : "—");
+    if (item._deployedAt) statsHtml += statHTML("listed", formatAge(item._deployedAt));
+
     return (
       '<div class="nft-collection-card" data-address="' + escapeHtml(addr) + '">' +
         '<div class="row no-border">' +
           '<div class="row-icon">' + iconHtml + '</div>' +
           '<div class="row-main">' +
-            '<div class="row-title"><span class="sym">' + escapeHtml(name) + '</span><span class="name">' + escapeHtml(symbol) + '</span></div>' +
+            '<div class="row-title">' + starHtml + '<span class="sym">' + escapeHtml(name) + '</span><span class="name">' + escapeHtml(symbol) + '</span></div>' +
             '<div class="row-badges"><span class="chip chip-ok">' + escapeHtml(type) + '</span></div>' +
           '</div>' +
-          '<div class="row-stats">' +
-            statHTML("holders", holders != null ? holders.toLocaleString("en-US") : "—") +
-            statHTML("items", supplyDisp != null ? formatCompactNumber(supplyDisp) : "—") +
-          '</div>' +
+          '<div class="row-stats">' + statsHtml + '</div>' +
           '<div class="row-actions">' +
             '<a class="btn-ghost" href="' + escapeHtml(explorerUrl) + '" target="_blank" rel="noopener noreferrer">View on explorer</a>' +
             '<button class="btn-ghost" data-nft-action="preview" data-address="' + escapeHtml(addr) + '">Preview items</button>' +
@@ -706,10 +747,21 @@
     return "";
   }
 
+  function nftEmptyStateHTML(chainKey) {
+    if (state.nftFeed === "watch") {
+      return '<div class="state-msg">You aren\'t watching any NFT collections on ' + escapeHtml(CHAINS[chainKey].label) +
+        ' yet. Tap the ☆ on any collection to star it here.</div>';
+    }
+    if (CHAINS[chainKey] && CHAINS[chainKey].supportsBlockscout === false) {
+      return '<div class="state-msg">No live contract list here — see the links below instead.</div>';
+    }
+    return '<div class="state-msg">No ERC-721/1155/404 contracts turned up from this explorer yet. Try Refresh, or check the links below.</div>';
+  }
+
   function renderNftList(items, chainKey) {
     var el = document.getElementById("nftList");
     if (!items.length) {
-      el.innerHTML = '<div class="state-msg">No ERC-721/1155/404 contracts turned up from this explorer yet. Try Refresh, or check the links below.</div>';
+      el.innerHTML = nftEmptyStateHTML(chainKey);
       return;
     }
     el.innerHTML = items.map(function (it) { return nftCollectionCardHTML(it, chainKey); }).join("");
@@ -738,9 +790,21 @@
     if (shareBtn) shareBtn.addEventListener("click", promptCustomNftShare);
   }
 
+  function updateNftFeedNote(chainKey) {
+    var el = document.getElementById("nftFeedNote");
+    if (state.nftFeed === "new" && CHAINS[chainKey] && CHAINS[chainKey].supportsBlockscout !== false) {
+      el.style.display = "block";
+      el.textContent = "The explorer has no \"newest contracts\" feed, so this re-sorts the same holder-ranked collections above by real deployment date — a brand-new, still-obscure collection won't show up here until it's also widely held.";
+    } else {
+      el.style.display = "none";
+      el.textContent = "";
+    }
+  }
+
   function ensureNftLoaded(chainKey) {
     renderNftSkeleton();
-    return jsonFetch("/api/nft/" + chainKey).then(function (body) {
+    updateNftFeedNote(chainKey);
+    return jsonFetch("/api/nft/" + chainKey + "/" + state.nftFeed).then(function (body) {
       var items = (body.data || []).map(function (it) {
         var addr = extractNftAddress(it).toLowerCase();
         return {
@@ -749,6 +813,7 @@
           holders_count: it.holders_count,
           total_supply: it.total_supply,
           icon_url: it.icon_url,
+          _deployedAt: it._deployedAt || null,
           explorerUrl: chainKey === "ethereum"
             ? "https://etherscan.io/address/" + addr
             : explorerBase(chainKey) + "/address/" + addr
@@ -1171,6 +1236,14 @@
       ensureNftLoaded(state.chain).then(function () { icon.classList.remove("spinning"); }).catch(function () { icon.classList.remove("spinning"); });
     });
 
+    document.getElementById("nftFeedTabs").addEventListener("click", function (e) {
+      var btn = e.target.closest(".feed-tab");
+      if (!btn) return;
+      state.nftFeed = btn.getAttribute("data-nft-feed");
+      document.querySelectorAll("#nftFeedTabs .feed-tab").forEach(function (b) { b.classList.toggle("active", b === btn); });
+      ensureNftLoaded(state.chain);
+    });
+
     document.getElementById("searchBtn").addEventListener("click", doSearch);
     document.getElementById("searchInput").addEventListener("keydown", function (e) { if (e.key === "Enter") doSearch(); });
 
@@ -1190,7 +1263,9 @@
       var prevBtn = e.target.closest('[data-nft-action="preview"]');
       if (prevBtn) { toggleNftPreview(prevBtn.getAttribute("data-address")); return; }
       var discBtn = e.target.closest('[data-nft-action="discord"]');
-      if (discBtn) sendNftToDiscord(discBtn.getAttribute("data-address"));
+      if (discBtn) { sendNftToDiscord(discBtn.getAttribute("data-address")); return; }
+      var watchBtn = e.target.closest('[data-nft-action="watch"]');
+      if (watchBtn) toggleNftWatch(watchBtn.getAttribute("data-address"));
     });
 
     document.getElementById("openSettings").addEventListener("click", openSettingsModal);
@@ -1221,6 +1296,7 @@
     state.nextPollAt = Date.now() + POLL_MS;
     loadSettings();
     loadWatchlist();
+    loadNftWatchlist();
     pollEvents();
   }
   setInterval(backgroundPoll, POLL_MS);
@@ -1230,7 +1306,7 @@
     bindEvents();
     updateAutoRefreshUI();
     updateNotifyDot();
-    Promise.all([loadChains(), loadSettings(), loadWatchlist(), initEventBaseline()]).then(function () {
+    Promise.all([loadChains(), loadSettings(), loadWatchlist(), loadNftWatchlist(), initEventBaseline()]).then(function () {
       renderChainTabs();
       updateChainUI();
       updateSortOptions(state.feed);

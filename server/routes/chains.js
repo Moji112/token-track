@@ -15,6 +15,10 @@ router.get("/", (req, res) => {
       note: c.note,
       warn: c.warn || null,
       nft: NFT_INFO[key] || { body: "", links: [] },
+      // Client-side gates (e.g. hiding "Most held"/whale-check for a non-Blockscout chain like
+      // Solana) need this — it was missing before, so those checks always silently defaulted wrong.
+      supportsBlockscout: c.supportsBlockscout !== false,
+      isEvm: c.isEvm !== false,
     };
   });
   res.json({ ok: true, data: list });

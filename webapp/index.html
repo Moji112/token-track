@@ -106,11 +106,16 @@
       </div>
 
       <div class="toolbar">
-        <span class="sub" id="nftListLabel">Sorted by holder count</span>
+        <div class="feed-tabs" id="nftFeedTabs">
+          <button class="feed-tab active" data-nft-feed="mostheld" type="button">Most held</button>
+          <button class="feed-tab" data-nft-feed="new" type="button">Freshly listed</button>
+          <button class="feed-tab" data-nft-feed="watch" type="button">★ Watching</button>
+        </div>
         <div class="toolbar-right">
           <button class="icon-btn" id="nftRefreshBtn" type="button" title="Refresh">↻</button>
         </div>
       </div>
+      <p class="chain-note" id="nftFeedNote" style="display:none;"></p>
 
       <div id="nftListBanner"></div>
       <div id="nftList"></div>
